@@ -156,6 +156,7 @@ public class MainActivity extends AppCompatActivity {
         try {
             if (NfcAdapter.ACTION_TECH_DISCOVERED.equals(action)) {
                 Tag tag = intent.getParcelableExtra(NfcAdapter.EXTRA_TAG);
+                tag = patchTag(tag); 
                 if (writeMode && dump != null) {
                     pendingWriteDialog.hide();
                     info.append("Writing to card...");
@@ -235,9 +236,83 @@ public class MainActivity extends AppCompatActivity {
      * @param activity The corresponding {@link Activity} requesting to stop the foreground dispatch.
      * @param adapter The {@link NfcAdapter} used for the foreground dispatch.
      */
-    public static void stopForegroundDispatch(final Activity activity, NfcAdapter adapter) {
-        adapter.disableForegroundDispatch(activity);
+    public Tag patchTag(Tag oTag)
+    {
+        if (oTag == null) 
+            return null;
+
+        String[] sTechList = oTag.getTechList();
+
+        Parcel oParcel, nParcel;
+
+        oParcel = Parcel.obtain();
+        oTag.writeToParcel(oParcel, 0);
+        oParcel.setDataPosition(0);
+
+        int len = oParcel.readInt();
+        byte[] id = null;
+        if (len >= 0)
+        {
+            id = new byte[len];
+            oParcel.readByteArray(id);
+        }
+        int[] oTechList = new int[oParcel.readInt()];
+        oParcel.readIntArray(oTechList);
+        Bundle[] oTechExtras = oParcel.createTypedArray(Bundle.CREATOR);
+        int serviceHandle = oParcel.readInt();
+        int isMock = oParcel.readInt();
+        IBinder tagService;
+        if (isMock == 0)
+        {
+            tagService = oParcel.readStrongBinder();
+        }
+        else
+        {
+            tagService = null;
+        }
+        oParcel.recycle();
+
+        int nfca_idx=-1;
+        int mc_idx=-1;
+
+        for(int idx = 0; idx < sTechList.length; idx++)
+        {
+            if(sTechList[idx] == NfcA.class.getName())
+            {
+                nfca_idx = idx;
+            }
+            else if(sTechList[idx] == MifareClassic.class.getName())
+            {
+                mc_idx = idx;
+            }
+        }
+
+        if(nfca_idx>=0&&mc_idx>=0&&oTechExtras[mc_idx]==null)
+        {
+            oTechExtras[mc_idx] = oTechExtras[nfca_idx];
+        }
+        else
+        {
+            return oTag;
+        }
+
+        nParcel = Parcel.obtain();
+        nParcel.writeInt(id.length);
+        nParcel.writeByteArray(id);
+        nParcel.writeInt(oTechList.length);
+        nParcel.writeIntArray(oTechList);
+        nParcel.writeTypedArray(oTechExtras,0);
+        nParcel.writeInt(serviceHandle);
+        nParcel.writeInt(isMock);
+        if(isMock==0)
+        {
+            nParcel.writeStrongBinder(tagService);
+        }
+        nParcel.setDataPosition(0);
+
+        Tag nTag = Tag.CREATOR.createFromParcel(nParcel);
+
+        nParcel.recycle();
+
+        return nTag;
     }
-
-
-}
